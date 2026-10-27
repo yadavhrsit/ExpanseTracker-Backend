@@ -14,11 +14,11 @@ passport.use(new LocalStrategy(
         try {
             const user = await UserModel.findOne({ email });
             if (!user) {
-                return done(null, false, { isError: 'Email is not registered.' });
+                return done(null, false, { message: 'Email is not registered' });
             }
             const isPasswordValid = await bcrypt.compare(password, user.password);
             if (!isPasswordValid) {
-                return done(null, false, { isError: 'Incorrect password. Please try again.' });
+                return done(null, false, { message: 'Incorrect password. Please try again' });
             }
             return done(null, user);
         } catch (error) {

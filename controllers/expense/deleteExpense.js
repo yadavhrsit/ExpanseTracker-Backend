@@ -1,37 +1,31 @@
-const { validationResult, check } = require('express-validator');
+const { check } = require('express-validator');
 const mongoose = require('mongoose');
 const ExpenseModel = require('../../models/expense');
-const BudgetModel = require('../../models/budget');
+const { sendSuccess, sendError, rejectIfInvalid, sendServerError } = require('../../utils/response');
 
 async function deleteExpense(req, res) {
+    await check('expenseId').notEmpty().withMessage('Expense ID is required').isMongoId().withMessage('Invalid Expense ID').run(req);
+    if (rejectIfInvalid(req, res)) return;
+
+    const { expenseId } = req.body;
     const session = await mongoose.startSession();
-    session.startTransaction();
 
     try {
-        await check('expenseId').isMongoId().run(req);
+        session.startTransaction();
 
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
+        const deleted = await ExpenseModel.findOneAndDelete({ _id: expenseId, user: req.session.userId }).session(session);
+        if (!deleted) {
+            await session.abortTransaction();
+            return sendError(res, { status: 404, message: 'Expense not found' });
         }
-
-        const { expenseId } = req.body;
-        const expense = await ExpenseModel.findById(expenseId).session(session);
-
-        if (!expense) {
-            return res.status(404).json({ error: "Expense not found" });
-        }
-
-        await ExpenseModel.deleteOne({ _id: expenseId }).session(session);
 
         await session.commitTransaction();
-        session.endSession();
-        return res.status(204).json({ success: 'Expense Deleted Successfully' });
+        return sendSuccess(res, { message: 'Expense deleted successfully' });
     } catch (error) {
-        await session.abortTransaction();
-        session.endSession();
-        console.error("Error occurred during deleting the Expense:", error);
-        return res.status(500).json({ error: "An error occurred during deleting the Expense" });
+        if (session.inTransaction()) await session.abortTransaction();
+        return sendServerError(res, error, 'An error occurred during deleting the expense');
+    } finally {
+        await session.endSession();
     }
 }
 

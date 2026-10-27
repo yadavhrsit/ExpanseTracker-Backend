@@ -1,12 +1,25 @@
+const { sendSuccess, sendServerError } = require('../../utils/response');
+
 function userLogout(req, res) {
-    try {
-        if (req.session) {
-            req.session.destroy();
+    const finish = (err) => {
+        if (err) {
+            return sendServerError(res, err, 'An error occurred during logout');
         }
-        return res.status(200).send({ message: "You've been signed out!" });
-    } catch (err) {
-        return res.status(500).send({ error: "Internal Server Error!" });
+        if (!req.session) {
+            return sendSuccess(res, { message: "You've been signed out" });
+        }
+        req.session.destroy((destroyErr) => {
+            if (destroyErr) {
+                return sendServerError(res, destroyErr, 'An error occurred during logout');
+            }
+            return sendSuccess(res, { message: "You've been signed out" });
+        });
+    };
+
+    if (typeof req.logout === 'function') {
+        return req.logout(finish);
     }
+    return finish();
 }
 
 module.exports = userLogout;

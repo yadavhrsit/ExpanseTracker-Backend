@@ -13,6 +13,6 @@ Router.post('/add', isAuthorized, addBudget);
 Router.patch('/update', isAuthorized, updateBudget);
 Router.delete('/delete', isAuthorized, deleteBudget);
 Router.get('/viewall', isAuthorized, viewAllBudgets);
-Router.get('/view', isAuthorized, viewBudget);
+Router.get('/view/:budgetId',isAuthorized, viewBudget);
 
 module.exports = Router;

@@ -1,25 +1,20 @@
-const { validationResult, check } = require('express-validator');
+const { param } = require('express-validator');
 const BudgetModel = require('../../models/budget');
+const { sendSuccess, sendError, rejectIfInvalid, sendServerError } = require('../../utils/response');
 
 async function viewBudget(req, res) {
     try {
-        await check('budgetId').isMongoId().run(req);
+        await param('budgetId').isMongoId().withMessage('Invalid Budget ID').run(req);
+        if (rejectIfInvalid(req, res)) return;
 
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
-
-        const budgetId = req.params.budgetId;
-        const budget = await BudgetModel.findById(budgetId);
-
+        const budget = await BudgetModel.findOne({ _id: req.params.budgetId, user: req.session.userId });
         if (!budget) {
-            return res.status(404).json({ error: "Budget not found" });
+            return sendError(res, { status: 404, message: 'Budget not found' });
         }
 
-        return res.status(200).json({ budget });
+        return sendSuccess(res, { message: 'Budget fetched successfully', data: { budget } });
     } catch (error) {
-        return res.status(500).json({ error: "Failed to retrieve the budget" });
+        return sendServerError(res, error, 'Failed to retrieve the budget');
     }
 }
 

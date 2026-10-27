@@ -1,5 +1,6 @@
-const { validationResult, body } = require('express-validator');
+const { body } = require('express-validator');
 const passport = require('passport');
+const { sendSuccess, sendError, rejectIfInvalid, sendServerError } = require('../../utils/response');
 
 const loginUserValidation = [
     body('email').notEmpty().withMessage('Email is required'),
@@ -7,25 +8,25 @@ const loginUserValidation = [
 ];
 
 function loginUser(req, res, next) {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({ isError: errors.array() });
-    }
+    if (rejectIfInvalid(req, res)) return;
 
     passport.authenticate('local', (err, user, info) => {
         if (err) {
-            return res.status(500).json({ isError: "An error occurred during login", err });
+            return sendServerError(res, err, 'An error occurred during login');
         }
         if (!user) {
-            return res.json({ isError: info.isError });
+            return sendError(res, { status: 401, message: info.message });
         }
         req.login(user, (loginErr) => {
             if (loginErr) {
-                return next(loginErr);
+                return sendServerError(res, loginErr, 'An error occurred during login');
             }
             req.session.userId = user._id;
             req.session.userName = user.name;
-            return res.status(200).json({ message: "Login Successful" });
+            return sendSuccess(res, {
+                message: 'Login successful',
+                data: { userId: user._id, userName: user.name },
+            });
         });
     })(req, res, next);
 }

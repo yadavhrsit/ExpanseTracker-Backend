@@ -1,6 +1,6 @@
 <h1 align="center" id="title">Expense Tracker App</h1>
 
-<p id="description">This repository contains the backend code for an Expense Tracker application. The server is built using Node.js and Express.js and utilizes MongoDB as the database. The app provides functionality to manage budgets and expenses and requires user authentication to access certain routes. The app also supports session management using Redis for better scalability.</p>
+<p id="description">This repository contains the backend code for an Expense Tracker application. The server is built using Node.js and Express.js and utilizes MongoDB as the database. The app provides functionality to manage budgets and expenses and requires user authentication to access certain routes. Sessions are stored in MongoDB.</p>
 
 ## Test Credentials
 
@@ -24,12 +24,7 @@ git clone https://github.com/yadavhrsit/ExpanseTracker-Backend
 ```
 npm install
 ```
-<p>3. Install and Start Redis:</p>
-Make sure to install Redis on your local machine. You can download and install Redis from the official website: https://redis.io/download
-
-After installation, start the Redis server.
-
-<p>4. Set up environment variables:</p>
+<p>3. Set up environment variables:</p>
 Create a .env file in the root directory and add the following environment variables:
 
 
@@ -41,17 +36,44 @@ GOOGLE_CLIENT_ID="your-google-client-id"
 GOOGLE_CLIENT_SECRET="your-google-client-secret"
 ```
 
-<p>5. Project Directory</p>
+<p>4. Project Directory</p>
 
 ```
 cd ExpanseTracker-Backend
 ```
 
-<p>6. Start the server:</p>
+<p>5. Start the server:</p>
 
 ```
 npm start
 ```
+
+<h2>API Response Format</h2>
+<p>Every endpoint (including 404s, rate limiting and unexpected errors) returns JSON in the same envelope.</p>
+
+**Success** (`2xx`)
+
+```json
+{
+  "success": true,
+  "message": "Budget added successfully",
+  "data": { "budget": { "_id": "...", "name": "Monthly Expenses", "amount": 1000 } }
+}
+```
+
+**Error** (`4xx` / `5xx`)
+
+```json
+{
+  "success": false,
+  "message": "Amount must be a number",
+  "errors": [{ "field": "amount", "message": "Amount must be a number" }]
+}
+```
+
+- `message` is always a human-readable string; `data` is only present on success when there is a payload; `errors` is only present for validation failures (`400`).
+- Status codes used: `200` OK, `201` created, `400` validation / business rule failure, `401` not authenticated or bad credentials, `404` not found, `409` conflict (e.g. email already registered), `429` rate limited, `500` unexpected server error (internals are never leaked).
+- Budgets and expenses are scoped to the logged-in user; another user's records return `404`.
 
 <h2>API Endpoints:</h2>
 <h3>Auth Routes</h3>
@@ -77,6 +99,17 @@ Request Body:
 <pre><b>Logout</b>
 URL: /auth/logout
 Method: GET</pre>
+<h3>Utility Routes</h3>
+<pre><b>Check email availability</b>
+URL: /utils/isemailavail/:email
+Method: GET
+Response data: { "available": true }
+</pre>
+<pre><b>Get logged-in user</b> (auth required)
+URL: /utils/getuser
+Method: GET
+Response data: { "userId": "...", "userName": "..." }
+</pre>
 <h3>Budget Routes</h3>
 <pre><b>Add a new budget</b>
 URL: /budget/add
@@ -101,12 +134,13 @@ URL: /budget/delete
 Method: DELETE
 Request Body:
 {
-  "budgetId": "budget-id"
+  "id": "budget-id"
 }
 </pre>
 <pre><b>View all budgets</b>
-URL: /budget/viewall
-Method: GET</pre>
+URL: /budget/viewall?page=1&limit=10
+Method: GET
+Response data: { "budgets": [...] }</pre>
 <pre><b>View a specific budget</b>
 URL: /budget/view/:budgetId
 Method: GET</pre>
@@ -142,7 +176,10 @@ Request Body:
 </pre>
 <pre><b>View all expenses</b>
 URL: /expense/viewall
-Method: GET</pre>
+Method: GET
+Query (all optional): sort=true&sortingCriteria=date|category|amount, filter=true&filterCriteria[category]=..., paginate=true&page=1&limit=10
+Response data: { "expenses": [...], "pagination": { "currentPage", "totalPages", "totalEntries", "limit" } }
+(pagination is only present when paginate=true)</pre>
 <pre><b>View a specific expense</b>
 URL: /expense/view/:expenseId
 Method: GET</pre>
@@ -163,7 +200,7 @@ To enable Google Sign-In, provide the Google Client ID and Google Client Secret 
 - `windowMs`: 15 minutes
 - `max`: 100 requests per 15 minutes
 
-This means that each IP address is limited to 100 requests within a 15-minute window. If a user exceeds the request limit, they will receive a 429 (Too Many Requests) status code for subsequent requests within the window.
+This means that each IP address is limited to 100 requests within a 15-minute window. If a user exceeds the request limit, they will receive a 429 (Too Many Requests) error response for subsequent requests within the window.
 The rate limiter middleware is applied to all API endpoints to prevent excessive requests and enhance the server's security and performance.
 
 <h2>Transactions</h2>

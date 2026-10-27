@@ -1,27 +1,30 @@
-const { validationResult, body } = require('express-validator');
+const { body } = require('express-validator');
 const UserModel = require('../../models/user');
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
+const { sendSuccess, sendError, rejectIfInvalid, sendServerError } = require('../../utils/response');
 
 const registerUserValidation = [
-    body('name').notEmpty().withMessage('Name is required'),
+    body('name').trim().notEmpty().withMessage('Name is required'),
     body('email').isEmail().withMessage('Invalid email format'),
     body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
 ];
 
 async function registerUser(req, res) {
-
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-    }
+    if (rejectIfInvalid(req, res)) return;
 
     try {
         let { name, email, password } = req.body;
-        name = name.split(' ')
+        name = name.split(/\s+/)
+            .filter(Boolean)
             .map(w => w[0].toUpperCase() + w.substring(1).toLowerCase())
             .join(' ');
         email = email.toLowerCase();
+
+        if (await UserModel.exists({ email })) {
+            return sendError(res, { status: 409, message: 'User already registered with this email' });
+        }
+
         const hash = await bcrypt.hash(password, 10);
         const googleId = uuidv4();
 
@@ -33,9 +36,9 @@ async function registerUser(req, res) {
         });
 
         await user.save();
-        return res.status(201).json({ message: "User Registration Successful" });
+        return sendSuccess(res, { status: 201, message: 'User registered successfully' });
     } catch (error) {
-        return res.status(500).json({ message: "An error occurred during user registration", error });
+        return sendServerError(res, error, 'An error occurred during user registration');
     }
 }
 

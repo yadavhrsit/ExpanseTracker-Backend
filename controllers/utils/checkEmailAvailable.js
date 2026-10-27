@@ -1,17 +1,16 @@
 const UserModel = require('../../models/user');
+const { sendSuccess, sendServerError } = require('../../utils/response');
 
 async function checkEmailAvailability(req, res) {
-    const email = req.params.email;
+    const email = req.params.email.toLowerCase();
     try {
-        const existingUser = await UserModel.findOne({ email });
-        if (existingUser) {
-            return res.status(400).json({ error: "User already registered with this email" });
-        } else {
-            return res.status(200).json({ available: true });
-        }
+        const existingUser = await UserModel.exists({ email });
+        return sendSuccess(res, {
+            message: existingUser ? 'Email is already registered' : 'Email is available',
+            data: { available: !existingUser },
+        });
     } catch (error) {
-        console.error('Error checking email availability:', error);
-        return res.status(500).json({ error: "Internal server error" });
+        return sendServerError(res, error, 'An error occurred while checking email availability');
     }
 }
 

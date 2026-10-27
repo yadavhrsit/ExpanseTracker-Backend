@@ -1,68 +1,76 @@
-const { check, validationResult } = require('express-validator');
+const { check } = require('express-validator');
 const mongoose = require('mongoose');
 const ExpenseModel = require('../../models/expense');
 const BudgetModel = require('../../models/budget');
+const { sendSuccess, sendError, rejectIfInvalid, sendServerError } = require('../../utils/response');
 
 async function updateExpense(req, res) {
+    await check('expenseId').notEmpty().withMessage('Expense ID is required').isMongoId().withMessage('Invalid Expense ID').run(req);
+    await check('amount').optional().isFloat({ gt: 0 }).withMessage('Amount must be a positive number').run(req);
+    await check('budgetId').optional().isMongoId().withMessage('Invalid Budget ID').run(req);
+    await check('description')
+        .optional()
+        .custom((value) => {
+            const wordCount = String(value).trim().split(/\s+/).length;
+            if (wordCount > 100) {
+                throw new Error('Description should be maximum 100 words');
+            }
+            return true;
+        })
+        .run(req);
+    if (rejectIfInvalid(req, res)) return;
+
+    const { expenseId, description, budgetId } = req.body;
+    const user = req.session.userId;
     const session = await mongoose.startSession();
-    session.startTransaction();
+
     try {
-        const { expenseId, description, amount, budgetId } = req.body;
-        await check('amount').optional().isNumeric().toFloat().run(req);
-        await check('description')
-            .optional()
-            .custom((value) => {
-                const wordCount = value.trim().split(/\s+/).length;
-                if (wordCount > 100) {
-                    throw new Error('Description should be maximum 100 words');
-                }
-                return true;
-            })
-            .run(req);
+        session.startTransaction();
 
-        const errors = validationResult(req);
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
-
-        const expense = await ExpenseModel.findById(expenseId).session(session);
+        const expense = await ExpenseModel.findOne({ _id: expenseId, user }).session(session);
         if (!expense) {
-            return res.status(404).json({ error: "Expense not found" });
+            await session.abortTransaction();
+            return sendError(res, { status: 404, message: 'Expense not found' });
         }
+
+        const targetBudgetId = budgetId || expense.budgetId;
+        const newAmount = req.body.amount != null ? Number(req.body.amount) : expense.amount;
+        const budgetChanged = String(targetBudgetId) !== String(expense.budgetId);
+
+        if (budgetChanged || newAmount !== expense.amount) {
+            const budget = await BudgetModel.findOne({ _id: targetBudgetId, user }).session(session);
+            if (!budget) {
+                await session.abortTransaction();
+                return sendError(res, { status: 404, message: 'Budget not found' });
+            }
+
+            const otherExpenses = await ExpenseModel.find({ budgetId: targetBudgetId, _id: { $ne: expense._id } }).session(session);
+            const otherTotal = otherExpenses.reduce((total, e) => total + e.amount, 0);
+            if (budget.amount - otherTotal < newAmount) {
+                await session.abortTransaction();
+                return sendError(res, { status: 400, message: 'Expense exceeds the budget' });
+            }
+
+            expense.amount = newAmount;
+            if (budgetChanged) {
+                expense.budgetId = targetBudgetId;
+                expense.category = budget.name;
+            }
+        }
+
         if (description != null) {
             expense.description = description;
         }
-        if (amount != null && expense.amount !== amount) {
-            const budget = await BudgetModel.findById(budgetId).session(session);
-            const allExpensesInBudget = await ExpenseModel.find({ budgetId }).session(session);
-            const cumulativeTotal = allExpensesInBudget.reduce((total, expense) => total + expense.amount, 0);
-            if (budget.amount - cumulativeTotal < amount) {
-                await session.abortTransaction();
-                session.endSession();
-                return res.status(400).json({ error: "Expense exceeds the Budget" });
-            }
-            expense.amount = amount;
-        }
-        if (budgetId) {
-            const newBudgetToAssign = await BudgetModel.findById(budgetId).session(session);
-            if (!newBudgetToAssign) {
-                return res.status(404).json({ error: "Budget not found" });
-            }
-            if (budgetId !== expense.budgetId) {
-                expense.budgetId = await budgetId;
-                expense.category = newBudgetToAssign.name;
-            }
-        }
 
-        await expense.save();
+        await expense.save({ session });
         await session.commitTransaction();
-        session.endSession();
 
-        return res.status(200).json({ success: 'Expense Updated Successfully' });
+        return sendSuccess(res, { message: 'Expense updated successfully', data: { expense } });
     } catch (error) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(500).json({ 'error-': "An error occurred during updating the Expense", error });
+        if (session.inTransaction()) await session.abortTransaction();
+        return sendServerError(res, error, 'An error occurred during updating the expense');
+    } finally {
+        await session.endSession();
     }
 }
 

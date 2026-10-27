@@ -13,6 +13,6 @@ Router.post('/add', isAuthorized, addExpense);
 Router.patch('/update', isAuthorized, updateExpense);
 Router.delete('/delete', isAuthorized, deleteExpense);
 Router.get('/viewall', isAuthorized, viewAllExpenses);
-Router.get('/view', isAuthorized, viewExpense);
+Router.get('/view/:expenseId',isAuthorized, viewExpense);
 
 module.exports = Router;
