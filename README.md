@@ -76,113 +76,375 @@ npm start
 - Budgets and expenses are scoped to the logged-in user; another user's records return `404`.
 
 <h2>API Endpoints:</h2>
+
+All endpoints return the [common response envelope](#api-response-format). Endpoints marked 🔒 require a logged-in session and additionally return this when not authenticated:
+
+```json
+// 401
+{ "success": false, "message": "Authentication required" }
+```
+
+Every endpoint under `/auth`, `/budget` and `/expense` can also return `429` when the rate limit is exceeded, and `500` for unexpected failures:
+
+```json
+// 429
+{ "success": false, "message": "Too many requests from this IP, please try again later." }
+// 500 (the message names the failed action; internals are never exposed)
+{ "success": false, "message": "Internal Server Error" }
+```
+
+Validation failures (`400`) always look like this, where `message` is the first error:
+
+```json
+{
+  "success": false,
+  "message": "Amount must be a number",
+  "errors": [{ "field": "amount", "message": "Amount must be a number" }]
+}
+```
+
 <h3>Auth Routes</h3>
-<pre><b>Register a new user</b>
-URL: /auth/register
-Method: POST
-Request Body:
+
+#### Register a new user
+`POST /auth/register`
+
+Request body:
+```json
+{ "name": "Your Name", "email": "user@example.com", "password": "your-password" }
+```
+
+Success `201`:
+```json
+{ "success": true, "message": "User registered successfully" }
+```
+
+Errors:
+| Status | message |
+|---|---|
+| 400 | `Name is required` / `Invalid email format` / `Password must be at least 6 characters long` |
+| 409 | `User already registered with this email` |
+| 500 | `An error occurred during user registration` |
+
+#### Login with existing user
+`POST /auth/login`
+
+Request body:
+```json
+{ "email": "user@example.com", "password": "your-password" }
+```
+
+Success `200` (also sets the session cookie):
+```json
 {
-  "name": "Your Name",
-  "email": "user@example.com",
-  "password": "your-password"
+  "success": true,
+  "message": "Login successful",
+  "data": { "userId": "64b1f0c2e4b0a1a2b3c4d5e6", "userName": "Your Name" }
 }
-</pre>
-<pre><b>Login with existing user</b>
-URL: /auth/login
-Method: POST
-Request Body:
-{
-  "email": "user@example.com",
-  "password": "your-password"
-}
-</pre>
-<pre><b>Logout</b>
-URL: /auth/logout
-Method: GET</pre>
+```
+
+Errors:
+| Status | message |
+|---|---|
+| 400 | `Email is required` / `Password is required` |
+| 401 | `Email is not registered` / `Incorrect password. Please try again` |
+| 500 | `An error occurred during login` |
+
+#### Logout
+`GET /auth/logout`
+
+Success `200`:
+```json
+{ "success": true, "message": "You've been signed out" }
+```
+
+Errors:
+| Status | message |
+|---|---|
+| 500 | `An error occurred during logout` |
+
 <h3>Utility Routes</h3>
-<pre><b>Check email availability</b>
-URL: /utils/isemailavail/:email
-Method: GET
-Response data: { "available": true }
-</pre>
-<pre><b>Get logged-in user</b> (auth required)
-URL: /utils/getuser
-Method: GET
-Response data: { "userId": "...", "userName": "..." }
-</pre>
+
+#### Check email availability
+`GET /utils/isemailavail/:email`
+
+Success `200` (`available` is `false` when the email is already registered):
+```json
+{ "success": true, "message": "Email is available", "data": { "available": true } }
+```
+
+Errors:
+| Status | message |
+|---|---|
+| 500 | `An error occurred while checking email availability` |
+
+#### Get logged-in user 🔒
+`GET /utils/getuser`
+
+Success `200`:
+```json
+{
+  "success": true,
+  "message": "User fetched successfully",
+  "data": { "userId": "64b1f0c2e4b0a1a2b3c4d5e6", "userName": "Your Name" }
+}
+```
+
 <h3>Budget Routes</h3>
-<pre><b>Add a new budget</b>
-URL: /budget/add
-Method: POST
-Request Body:
+
+#### Add a new budget 🔒
+`POST /budget/add`
+
+Request body:
+```json
+{ "name": "Monthly Expenses", "amount": 1000 }
+```
+
+Success `201`:
+```json
 {
-  "name": "Monthly Expenses",
-  "amount": 1000
+  "success": true,
+  "message": "Budget added successfully",
+  "data": {
+    "budget": { "_id": "64b1f...", "user": "64b1e...", "name": "Monthly Expenses", "amount": 1000 }
+  }
 }
-</pre>
-<pre><b>Update an existing budget</b>
-URL: /budget/update
-Method: PATCH
-Request Body:
+```
+
+Errors:
+| Status | message |
+|---|---|
+| 400 | `Name is required` / `Amount is required` / `Amount must be a number` |
+| 409 | `A record with the same unique value already exists` (budget name is taken) |
+| 500 | `An error occurred during the addition of the budget` |
+
+#### Update an existing budget 🔒
+`PATCH /budget/update`
+
+Request body:
+```json
+{ "id": "budget-id", "amount": 1200 }
+```
+
+Success `200`:
+```json
 {
-  "id": "budget-id",
-  "amount": 1200
+  "success": true,
+  "message": "Budget updated successfully",
+  "data": {
+    "budget": { "_id": "budget-id", "user": "64b1e...", "name": "Monthly Expenses", "amount": 1200 }
+  }
 }
-</pre>
-<pre><b>Delete a budget</b>
-URL: /budget/delete
-Method: DELETE
-Request Body:
+```
+
+Errors:
+| Status | message |
+|---|---|
+| 400 | `Budget ID is required` / `Invalid Budget ID` / `Amount is required` / `Amount must be a number` |
+| 404 | `Budget not found` |
+| 500 | `An error occurred during the update of the budget` |
+
+#### Delete a budget 🔒
+`DELETE /budget/delete`
+
+Request body:
+```json
+{ "id": "budget-id" }
+```
+
+Success `200`:
+```json
+{ "success": true, "message": "Budget deleted successfully" }
+```
+
+Errors:
+| Status | message |
+|---|---|
+| 400 | `Budget ID is required` / `Invalid Budget ID` |
+| 404 | `Budget not found` |
+| 500 | `Failed to delete the budget` |
+
+#### View all budgets 🔒
+`GET /budget/viewall?page=1&limit=10` (`page` and `limit` are optional, default `1` and `10`)
+
+Success `200`:
+```json
 {
-  "id": "budget-id"
+  "success": true,
+  "message": "Budgets fetched successfully",
+  "data": {
+    "budgets": [{ "_id": "64b1f...", "user": "64b1e...", "name": "Monthly Expenses", "amount": 1000 }]
+  }
 }
-</pre>
-<pre><b>View all budgets</b>
-URL: /budget/viewall?page=1&limit=10
-Method: GET
-Response data: { "budgets": [...] }</pre>
-<pre><b>View a specific budget</b>
-URL: /budget/view/:budgetId
-Method: GET</pre>
+```
+
+Errors:
+| Status | message |
+|---|---|
+| 400 | `Invalid page number` / `Invalid limit value` |
+| 500 | `An error occurred while retrieving all the budgets` |
+
+#### View a specific budget 🔒
+`GET /budget/view/:budgetId`
+
+Success `200`:
+```json
+{
+  "success": true,
+  "message": "Budget fetched successfully",
+  "data": {
+    "budget": { "_id": "64b1f...", "user": "64b1e...", "name": "Monthly Expenses", "amount": 1000 }
+  }
+}
+```
+
+Errors:
+| Status | message |
+|---|---|
+| 400 | `Invalid Budget ID` |
+| 404 | `Budget not found` |
+| 500 | `Failed to retrieve the budget` |
+
 <h3>Expense Routes</h3>
-<pre><b>Add a new expense</b>
-URL: /expense/add
-Method: POST
-Request Body:
+
+An expense's `category` is set to the name of its budget. The total of all expenses in a budget can never exceed the budget amount.
+
+#### Add a new expense 🔒
+`POST /expense/add`
+
+Request body:
+```json
+{ "description": "Grocery Shopping", "amount": 50, "budgetId": "budget-id" }
+```
+
+Success `201`:
+```json
 {
-  "description": "Grocery Shopping",
-  "amount": 50,
-  "budgetId": "budget-id"
+  "success": true,
+  "message": "Expense added successfully",
+  "data": {
+    "expense": {
+      "_id": "64b2a...", "date": "2026-10-27T10:00:00.000Z", "description": "Grocery Shopping",
+      "amount": 50, "budgetId": "budget-id", "user": "64b1e...", "category": "Monthly Expenses"
+    }
+  }
 }
-</pre>
-<pre><b>Update an existing expense</b>
-URL: /expense/update
-Method: PATCH
-Request Body:
+```
+
+Errors:
+| Status | message |
+|---|---|
+| 400 | `Description is required` / `Amount is required` / `Amount must be a positive number` / `Budget ID is required` / `Invalid Budget ID` / `Expense exceeds the budget` |
+| 404 | `Budget not found` |
+| 500 | `An error occurred during the addition of the expense` |
+
+#### Update an existing expense 🔒
+`PATCH /expense/update`
+
+Request body (`description`, `amount` and `budgetId` are all optional):
+```json
+{ "expenseId": "expense-id", "description": "Grocery Shopping", "amount": 60, "budgetId": "new-budget-id" }
+```
+
+Success `200` (returns the updated expense, same shape as Add):
+```json
 {
-  "expenseId": "expense-id",
-  "description": "Grocery Shopping",
-  "amount": 60,
-  "budgetId": "new-budget-id"
+  "success": true,
+  "message": "Expense updated successfully",
+  "data": {
+    "expense": {
+      "_id": "expense-id", "date": "2026-10-27T10:00:00.000Z", "description": "Grocery Shopping",
+      "amount": 60, "budgetId": "new-budget-id", "user": "64b1e...", "category": "New Budget Name"
+    }
+  }
 }
-</pre>
-<pre><b>Delete an expense</b>
-URL: /expense/delete
-Method: DELETE
-Request Body:
+```
+
+Errors:
+| Status | message |
+|---|---|
+| 400 | `Expense ID is required` / `Invalid Expense ID` / `Amount must be a positive number` / `Invalid Budget ID` / `Description should be maximum 100 words` / `Expense exceeds the budget` |
+| 404 | `Expense not found` / `Budget not found` |
+| 500 | `An error occurred during updating the expense` |
+
+#### Delete an expense 🔒
+`DELETE /expense/delete`
+
+Request body:
+```json
+{ "expenseId": "expense-id" }
+```
+
+Success `200`:
+```json
+{ "success": true, "message": "Expense deleted successfully" }
+```
+
+Errors:
+| Status | message |
+|---|---|
+| 400 | `Expense ID is required` / `Invalid Expense ID` |
+| 404 | `Expense not found` |
+| 500 | `An error occurred during deleting the expense` |
+
+#### View all expenses 🔒
+`GET /expense/viewall`
+
+Query parameters (all optional):
+- `sort=true&sortingCriteria=date|category|amount`
+- `filter=true&filterCriteria[category]=Food&filterCriteria[amount-range]=10-100&filterCriteria[date-range]=<start>-<end>`
+- `paginate=true&page=1&limit=10`
+
+Success `200` without pagination:
+```json
 {
-  "expenseId": "expense-id"
+  "success": true,
+  "message": "Expenses fetched successfully",
+  "data": { "expenses": [{ "_id": "64b2a...", "description": "Grocery Shopping", "amount": 50, "category": "Monthly Expenses" }] }
 }
-</pre>
-<pre><b>View all expenses</b>
-URL: /expense/viewall
-Method: GET
-Query (all optional): sort=true&sortingCriteria=date|category|amount, filter=true&filterCriteria[category]=..., paginate=true&page=1&limit=10
-Response data: { "expenses": [...], "pagination": { "currentPage", "totalPages", "totalEntries", "limit" } }
-(pagination is only present when paginate=true)</pre>
-<pre><b>View a specific expense</b>
-URL: /expense/view/:expenseId
-Method: GET</pre>
+```
+
+Success `200` with `paginate=true` adds a `pagination` object:
+```json
+{
+  "success": true,
+  "message": "Expenses fetched successfully",
+  "data": {
+    "expenses": [ ... ],
+    "pagination": { "currentPage": 1, "totalPages": 3, "totalEntries": 25, "limit": 10 }
+  }
+}
+```
+
+Errors:
+| Status | message |
+|---|---|
+| 400 | `Invalid limit value` / `Invalid page number` / other invalid query values |
+| 500 | `An error occurred during getting all the expenses` |
+
+#### View a specific expense 🔒
+`GET /expense/view/:expenseId`
+
+Success `200`:
+```json
+{
+  "success": true,
+  "message": "Expense fetched successfully",
+  "data": {
+    "expense": {
+      "_id": "64b2a...", "date": "2026-10-27T10:00:00.000Z", "description": "Grocery Shopping",
+      "amount": 50, "budgetId": "64b1f...", "user": "64b1e...", "category": "Monthly Expenses"
+    }
+  }
+}
+```
+
+Errors:
+| Status | message |
+|---|---|
+| 400 | `Invalid Expense ID` |
+| 404 | `Expense not found` |
+| 500 | `An error occurred during opening the expense` |
+
 <h2>User Password Encryption:</h2>
 <p>
 This application ensures the security of user passwords by encrypting them before storing in the database. Passwords are not stored in plain text; instead, they are hashed using a strong cryptographic hashing algorithm. This approach ensures that even if the database is compromised, user passwords remain secure and cannot be easily retrieved.
